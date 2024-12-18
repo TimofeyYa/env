@@ -526,7 +526,7 @@ func toEnvName(input string) string {
 // FieldParams contains information about parsed field tags.
 type FieldParams struct {
 	OwnKey          string
-	Key             string
+	Key             []string
 	DefaultValue    string
 	HasDefaultValue bool
 	Required        bool
@@ -546,9 +546,13 @@ func parseFieldParams(field reflect.StructField, opts Options) (FieldParams, err
 
 	defaultValue, hasDefaultValue := field.Tag.Lookup(opts.DefaultValueTagName)
 
+	keys := make([]string, 0, 0)
+	for _, key := range strings.Split(ownKey, ";") {
+		keys = append(keys, opts.Prefix+strings.TrimSpace(key))
+	}
 	result := FieldParams{
 		OwnKey:          ownKey,
-		Key:             opts.Prefix + ownKey,
+		Key:             keys,
 		Required:        opts.RequiredIfNoDef,
 		DefaultValue:    defaultValue,
 		HasDefaultValue: hasDefaultValue,
@@ -584,12 +588,14 @@ func parseFieldParams(field reflect.StructField, opts Options) (FieldParams, err
 func get(fieldParams FieldParams, opts Options) (val string, err error) {
 	var exists, isDefault bool
 
-	val, exists, isDefault = getOr(
-		fieldParams.Key,
-		fieldParams.DefaultValue,
-		fieldParams.HasDefaultValue,
-		opts.Environment,
-	)
+	for _, key := range fieldParams.Key {
+		val, exists, isDefault = getOr(
+			key,
+			fieldParams.DefaultValue,
+			fieldParams.HasDefaultValue,
+			opts.Environment,
+		)
+	}
 
 	if fieldParams.Expand {
 		val = os.Expand(val, opts.getRawEnv)
@@ -598,28 +604,30 @@ func get(fieldParams FieldParams, opts Options) (val string, err error) {
 	opts.rawEnvVars[fieldParams.OwnKey] = val
 
 	if fieldParams.Unset {
-		defer os.Unsetenv(fieldParams.Key)
+		for _, key := range fieldParams.Key {
+			defer os.Unsetenv(key)
+		}
 	}
 
 	if fieldParams.Required && !exists && fieldParams.OwnKey != "" {
-		return "", newVarIsNotSetError(fieldParams.Key)
+		return "", newVarIsNotSetError(fieldParams.OwnKey)
 	}
 
 	if fieldParams.NotEmpty && val == "" {
-		return "", newEmptyVarError(fieldParams.Key)
+		return "", newEmptyVarError(fieldParams.OwnKey)
 	}
 
 	if fieldParams.LoadFile && val != "" {
 		filename := val
 		val, err = getFromFile(filename)
 		if err != nil {
-			return "", newLoadFileContentError(filename, fieldParams.Key, err)
+			return "", newLoadFileContentError(filename, fieldParams.OwnKey, err)
 		}
 	}
 
 	if opts.OnSet != nil {
 		if fieldParams.OwnKey != "" {
-			opts.OnSet(fieldParams.Key, val, isDefault)
+			opts.OnSet(fieldParams.OwnKey, val, isDefault)
 		}
 	}
 	return val, err
