@@ -587,8 +587,11 @@ func parseFieldParams(field reflect.StructField, opts Options) (FieldParams, err
 
 func get(fieldParams FieldParams, opts Options) (val string, err error) {
 	var exists, isDefault bool
-	fmt.Println("keys", fieldParams.Key)
+
 	for _, key := range fieldParams.Key {
+		if val != "" && val != fieldParams.DefaultValue {
+			continue
+		}
 		val, exists, isDefault = getOr(
 			key,
 			fieldParams.DefaultValue,
